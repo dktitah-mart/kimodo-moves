@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "id": "kimodo",
+  "name": "Kimodo moves",
+  "version": "0.2.0",
+  "author": {
+    "name": "Vladimir (dktitah-mart)",
+    "url": "https://github.com/dktitah-mart"
+  },
+  "licence": "Apache-2.0",
+  "summary": "Text to human motion with NVIDIA Kimodo: type what the body does, get an animated SOMA skeleton (GLB) and Kimodo's own motion file (NPZ).",
+  "runs": "local",
+  "needs": {
+    "assetfurnace": ">=0.6.0",
+    "gpu": "NVIDIA, 17 GB video memory; about 3 GB with 'Text encoder on CPU' (then about 20 GB of system memory)",
+    "python": ">=3.10 with venv, plus g++ (Kimodo builds a small C++ part)",
+    "weights": "run get_weights.sh once after install; it needs a Hugging Face token with access to meta-llama/Meta-Llama-3-8B-Instruct"
+  },
+  "setup": ["bash", "setup.sh"],
+  "models": [
+    {
+      "name": "nvidia/Kimodo-SOMA-RP-v1.1",
+      "licence": "NVIDIA Open Model License",
+      "size": "about 1 GB (estimate)"
+    },
+    {
+      "name": "nvidia/Kimodo-SOMA-SEED-v1.1",
+      "licence": "NVIDIA Open Model License",
+      "size": "about 1 GB (estimate)"
+    },
+    {
+      "name": "McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp + -mntp-supervised",
+      "licence": "MIT (adapters); built on Llama 3",
+      "size": "under 1 GB (estimate)"
+    },
+    {
+      "name": "meta-llama/Meta-Llama-3-8B-Instruct",
+      "licence": "Meta Llama 3 Community License (gated: you accept it on Hugging Face)",
+      "size": "about 16 GB"
+    }
+  ],
+  "tools": [
+    {
+      "id": "move",
+      "label": "Make a move",
+      "hint": "Describe one move in English (e.g. 'A soldier thrusts a spear forward, then steps back'); Kimodo animates a human skeleton.",
+      "inputs": [
+        {"id": "prompt", "type": "text", "label": "What the body does (English)"},
+        {"id": "seconds", "type": "number", "label": "Length (seconds)", "min": 1, "max": 10},
+        {"id": "seed", "type": "number", "label": "Seed (another number, another take)", "min": 0, "max": 99999},
+        {"id": "model", "type": "choice", "label": "Model", "choices": ["Kimodo-SOMA-RP-v1.1", "Kimodo-SOMA-SEED-v1.1"]},
+        {"id": "text_on_cpu", "type": "toggle", "label": "Text encoder on CPU (little video memory)"}
+      ],
+      "run": ["bash", "run.sh", "{out}", "{prompt}", "{seconds}", "{seed}", "{model}", "{text_on_cpu}"],
+      "makes": "glb"
+    }
+  ]
+}
