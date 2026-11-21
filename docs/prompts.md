@@ -27,6 +27,11 @@ model was Kimodo-SOMA-RP-v1.1 on an RTX 4090, where one take of 2–5 s takes ab
 - **Bows** need the pose spelled out: "the left arm held straight out in front, pulls the string back to the right
   cheek".
 - **Riders:** there is no horse. Use another tool for mounted moves.
+- **Characters holding things.** Kimodo has no props. "As if holding a shield" gives the right arm *position*, but
+  the forearm roll and the grip are Kimodo's guess. In the author's game, a big shield came out sideways with the
+  fist outside, even with the roll aligned exactly. For soldiers and workers, take the arms (shoulder to hand) from
+  your own clip made for that prop, and use Kimodo for the hips, legs, spine and head. Leave characters that hold
+  nothing fully on Kimodo.
 
 ## Checking a take without opening it
 
