@@ -115,23 +115,9 @@ func build(skel: Skeleton3D, clip: RefCounted, opts := {}) -> Animation:
 	if not name_of_soma.has("Hips"):
 		err = "bone_map has no bone for SOMA Hips on this skeleton"
 		return null
-	# limb alignment A: rest direction -> SOMA T-pose direction
+	# limb alignment A: your rest frame -> SOMA's T-pose frame (direction AND roll; see docs/retarget.md)
 	var tpose: PackedVector3Array = clip.get("tpose")
-	var A := {}
-	for bi: int in soma_of:
-		A[bi] = Quaternion.IDENTITY
-	for sname: String in SOMA_NEXT:
-		var nxt: String = SOMA_NEXT[sname]
-		if not name_of_soma.has(sname) or not name_of_soma.has(nxt):
-			continue
-		var bi2: int = name_of_soma[sname]
-		var have: Vector3 = rest_g[name_of_soma[nxt]].origin - rest_g[bi2].origin
-		var want: Vector3 = tpose[SOMA.find(nxt)] - tpose[SOMA.find(sname)]
-		if have.length() > 1e-5 and want.length() > 1e-5:
-			A[bi2] = _arc(have.normalized(), want.normalized())
-	for e: String in SOMA_ENDS:
-		if name_of_soma.has(e) and name_of_soma.has(SOMA_ENDS[e]):
-			A[name_of_soma[e]] = A[name_of_soma[SOMA_ENDS[e]]]
+	var A := align_limbs(skel, rest_g, name_of_soma, tpose, SOMA)
 	# size: your hips over your feet vs SOMA's
 	var hips_i: int = name_of_soma["Hips"]
 	var fy := INF
@@ -184,6 +170,105 @@ func build(skel: Skeleton3D, clip: RefCounted, opts := {}) -> Animation:
 		anim.position_track_insert_key(pos_track, key_t, Pg.affine_inverse() * w)
 	speed = trav.length() * ratio / maxf(dur, 1e-3) if cut in ["walk", "run"] else 0.0
 	return anim
+
+
+## Finger bones used to find the palm: SOMA name -> name patterns looked for in your skeleton (first match wins).
+const FINGER_PATTERNS := {
+	"HandIndex1": ["HandIndex1", "IndexProximal", "Index1", "index_01"],
+	"HandMiddle1": ["HandMiddle1", "MiddleProximal", "Middle1", "middle_01"],
+	"HandPinky1": ["HandPinky1", "LittleProximal", "Pinky1", "pinky_01"],
+}
+## Extra bones for the palm when the names are unusual: {"LeftHandIndex1": "my_l_index_a", ...}
+var finger_map := {}
+
+
+## Alignment A for every mapped limb bone: a rotation taking the bone's rest frame to SOMA's T-pose frame.
+## Frame = (axis to the next joint, a second reference axis). The second axis is the palm normal for arm bones
+## (from the index, middle and pinky base joints), the foot direction for leg bones, and up for the foot itself.
+## Aligning only the direction (shortest arc) leaves the roll around the bone free, so hands and forearms come out
+## twisted: a sword turns in the grip, a shield on the forearm swings into the face. Missing fingers or toes fall
+## back to the shortest arc.
+func align_limbs(skel: Skeleton3D, rest_g: Array[Transform3D], name_of_soma: Dictionary, tpose: PackedVector3Array, SOMA: Array) -> Dictionary:
+	var A := {}
+	for sn: String in name_of_soma:
+		A[name_of_soma[sn]] = Quaternion.IDENTITY
+	var soma := func(nm: String) -> Vector3: return tpose[SOMA.find(nm)]
+	var bone_pos := func(side: String, finger: String) -> Variant:
+		var key := side + finger
+		if finger_map.has(key):
+			var bi0 := skel.find_bone(String(finger_map[key]))
+			return rest_g[bi0].origin if bi0 >= 0 else null
+		for pat: String in FINGER_PATTERNS[finger]:
+			for bi1 in skel.get_bone_count():
+				var nm := skel.get_bone_name(bi1)
+				var low := nm.to_lower()
+				var side_ok := (side == "Left" and (nm.contains("Left") or low.begins_with("l_") or low.contains("_l_") or low.ends_with(".l") or low.ends_with("_l"))) \
+					or (side == "Right" and (nm.contains("Right") or low.begins_with("r_") or low.contains("_r_") or low.ends_with(".r") or low.ends_with("_r")))
+				if side_ok and low.contains(pat.to_lower()):
+					return rest_g[bi1].origin
+		return null
+	var sec_ours := {}
+	var sec_soma := {}
+	for side: String in ["Left", "Right"]:
+		var hn := side + "Hand"
+		var m: Variant = bone_pos.call(side, "HandMiddle1")
+		var i: Variant = bone_pos.call(side, "HandIndex1")
+		var pk: Variant = bone_pos.call(side, "HandPinky1")
+		if name_of_soma.has(hn) and m != null and i != null and pk != null:
+			var h: Vector3 = rest_g[name_of_soma[hn]].origin
+			sec_ours[side + "arm"] = ((m as Vector3) - h).cross((pk as Vector3) - (i as Vector3))
+			sec_ours[side + "hand_dir"] = (m as Vector3) - h
+		sec_soma[side + "arm"] = (soma.call(side + "HandMiddle1") - soma.call(hn)).cross(soma.call(side + "HandPinky1") - soma.call(side + "HandIndex1"))
+		sec_soma[side + "hand_dir"] = soma.call(side + "HandMiddle1") - soma.call(hn)
+		if name_of_soma.has(side + "Foot") and name_of_soma.has(side + "ToeBase"):
+			sec_ours[side + "leg"] = rest_g[name_of_soma[side + "ToeBase"]].origin - rest_g[name_of_soma[side + "Foot"]].origin
+		sec_soma[side + "leg"] = soma.call(side + "ToeBase") - soma.call(side + "Foot")
+	for sname: String in SOMA_NEXT:
+		var nxt: String = SOMA_NEXT[sname]
+		if not name_of_soma.has(sname) or not name_of_soma.has(nxt):
+			continue
+		var bi2: int = name_of_soma[sname]
+		var d_our: Vector3 = rest_g[name_of_soma[nxt]].origin - rest_g[bi2].origin
+		var d_soma: Vector3 = soma.call(nxt) - soma.call(sname)
+		var side2 := "Left" if sname.begins_with("Left") else "Right"
+		if sname.ends_with("Foot"):
+			A[bi2] = _frame_align(d_our, Vector3.UP, d_soma, Vector3.UP)
+		else:
+			var key := side2 + ("leg" if (sname.contains("Leg") or sname.contains("Shin")) else "arm")
+			A[bi2] = _frame_align(d_our, sec_ours.get(key, null), d_soma, sec_soma.get(key, null))
+	for side3: String in ["Left", "Right"]:
+		var hn3 := side3 + "Hand"
+		if name_of_soma.has(hn3):
+			if sec_ours.has(side3 + "hand_dir"):
+				A[name_of_soma[hn3]] = _frame_align(sec_ours[side3 + "hand_dir"], sec_ours[side3 + "arm"], sec_soma[side3 + "hand_dir"], sec_soma[side3 + "arm"])
+			elif name_of_soma.has(side3 + "ForeArm"):
+				A[name_of_soma[hn3]] = A[name_of_soma[side3 + "ForeArm"]]
+		if name_of_soma.has(side3 + "ToeBase") and name_of_soma.has(side3 + "Foot"):
+			A[name_of_soma[side3 + "ToeBase"]] = A[name_of_soma[side3 + "Foot"]]
+	return A
+
+
+## Rotation taking frame (d_a, s_a) to frame (d_b, s_b): first axes exactly, second axes as close as they can be.
+## No usable second axis: the shortest arc d_a -> d_b.
+static func _frame_align(d_a: Vector3, s_a: Variant, d_b: Vector3, s_b: Variant) -> Quaternion:
+	if d_a.length() < 1e-6 or d_b.length() < 1e-6:
+		return Quaternion.IDENTITY
+	var fa: Variant = _frame(d_a, s_a)
+	var fb: Variant = _frame(d_b, s_b)
+	if fa == null or fb == null:
+		return _arc(d_a.normalized(), d_b.normalized())
+	return ((fb as Basis) * (fa as Basis).inverse()).get_rotation_quaternion()
+
+
+static func _frame(d: Vector3, s: Variant) -> Variant:
+	if s == null:
+		return null
+	var x := d.normalized()
+	var y: Vector3 = (s as Vector3) - x * (s as Vector3).dot(x)
+	if y.length() < 1e-4:
+		return null
+	y = y.normalized()
+	return Basis(x, y, x.cross(y))
 
 
 ## World rotation of bone bi at t, memoised in gq (parents first).

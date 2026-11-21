@@ -33,10 +33,20 @@ func make_skeleton(clip) -> Skeleton3D:
 	var parent := {"hips": "", "spine": "hips", "spine1": "spine", "chest": "spine1", "neck": "chest", "head": "neck",
 		"l_clav": "chest", "l_up": "l_clav", "l_low": "l_up", "l_hand": "l_low", "r_clav": "chest", "r_up": "r_clav",
 		"r_low": "r_up", "r_hand": "r_low", "l_thigh": "hips", "l_shin": "l_thigh", "l_foot": "l_shin", "l_toe": "l_foot",
-		"r_thigh": "hips", "r_shin": "r_thigh", "r_foot": "r_shin", "r_toe": "r_foot", "prop": "r_hand"}
+		"r_thigh": "hips", "r_shin": "r_thigh", "r_foot": "r_shin", "r_toe": "r_foot", "prop": "r_hand",
+		"LeftHandIndex1": "l_hand", "LeftHandMiddle1": "l_hand", "LeftHandPinky1": "l_hand",
+		"RightHandIndex1": "r_hand", "RightHandMiddle1": "r_hand", "RightHandPinky1": "r_hand"}
 	pos["prop"] = (pos["r_hand"] as Vector3) + Vector3(0, -0.1, 0.05)
+	# finger bases (unmapped) so the retarget can find the palm; in the A-pose they swing with the arm
+	for side in [["l_", "Left", 1.0], ["r_", "Right", -1.0]]:
+		var piv2: Vector3 = (clip.tpose[SOMA.find(side[1] + "Arm")] as Vector3) * 0.8 + Vector3(0, 1.0, 0)
+		var q2 := Quaternion(Vector3(0, 0, 1), -deg_to_rad(45.0) * float(side[2]))
+		for f in ["HandIndex1", "HandMiddle1", "HandPinky1"]:
+			var p0: Vector3 = (clip.tpose[SOMA.find(side[1] + f)] as Vector3) * 0.8 + Vector3(0, 1.0, 0)
+			pos[side[1] + f] = piv2 + q2 * (p0 - piv2)
 	var order := ["hips", "spine", "spine1", "chest", "neck", "head", "l_clav", "l_up", "l_low", "l_hand", "r_clav", "r_up",
-		"r_low", "r_hand", "prop", "l_thigh", "l_shin", "l_foot", "l_toe", "r_thigh", "r_shin", "r_foot", "r_toe"]
+		"r_low", "r_hand", "prop", "LeftHandIndex1", "LeftHandMiddle1", "LeftHandPinky1", "RightHandIndex1", "RightHandMiddle1",
+		"RightHandPinky1", "l_thigh", "l_shin", "l_foot", "l_toe", "r_thigh", "r_shin", "r_foot", "r_toe"]
 	var glob := {}
 	var k := 0
 	for b: String in order:
@@ -64,6 +74,7 @@ func _initialize() -> void:
 	check(absf(anim.length - clip.duration()) < 1e-3, "length = clip length")
 	var worst := 0.0
 	var prop_err := 0.0
+	var palm := 0.0
 	var hips_err := 0.0
 	var SOMA: Array = Clip.SOMA77
 	var yaw0: float = clip.yaw_at(0.0)
@@ -91,6 +102,16 @@ func _initialize() -> void:
 			var tp: Vector3 = clip.tpose[SOMA.find(RT.SOMA_NEXT[s])] - clip.tpose[SOMA.find(s)]
 			var d_soma: Vector3 = (face * (clip.rot_at(SOMA.find(s), t) * tp)).normalized()
 			worst = maxf(worst, rad_to_deg(d_ours.angle_to(d_soma)))
+		# palms: the normal from the finger bases must turn with SOMA's hand (roll included)
+		for side in ["Left", "Right"]:
+			var hb := sk.find_bone(MAP.find_key(side + "Hand"))
+			var hp0: Vector3 = (g[hb] as Transform3D).origin
+			var po: Vector3 = ((g[sk.find_bone(side + "HandMiddle1")] as Transform3D).origin - hp0).cross(
+				(g[sk.find_bone(side + "HandPinky1")] as Transform3D).origin - (g[sk.find_bone(side + "HandIndex1")] as Transform3D).origin).normalized()
+			var hs: int = SOMA.find(side + "Hand")
+			var pt: Vector3 = (clip.tpose[SOMA.find(side + "HandMiddle1")] - clip.tpose[hs]).cross(clip.tpose[SOMA.find(side + "HandPinky1")] - clip.tpose[SOMA.find(side + "HandIndex1")])
+			var ps: Vector3 = (face * (clip.rot_at(hs, t) * pt)).normalized()
+			palm = maxf(palm, rad_to_deg(po.angle_to(ps)))
 		# unmapped prop keeps its rest offset from the hand
 		var want_prop: Transform3D = (g[sk.find_bone("r_hand")] as Transform3D) * sk.get_bone_rest(sk.find_bone("prop"))
 		prop_err = maxf(prop_err, (want_prop.origin - (g[sk.find_bone("prop")] as Transform3D).origin).length())
@@ -106,6 +127,8 @@ func _initialize() -> void:
 	print("    worst limb direction error %.3f deg, prop drift %.4f m, hips error %.4f m" % [worst, prop_err, hips_err])
 	check(worst < 0.5, "every limb points where SOMA's does (worst %.3f deg)" % worst)
 	check(prop_err < 1e-3, "unmapped bones keep their rest under their parent")
+	print("    worst palm error %.3f deg" % palm)
+	check(palm < 0.5, "palms turn with SOMA's hands, roll included (worst %.3f deg)" % palm)
 	check(hips_err < 1e-3, "hips follow SOMA's path scaled by hip height")
 	# one-shot retime
 	var a2: Animation = rt.build(sk, clip, {"cut": "action", "length": 0.8, "skeleton_path": "."})

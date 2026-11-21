@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Retarget aligns the full limb frame (palm normal for arms, foot direction for legs), not only the bone direction: hands and forearms no longer twist, so held props stay in the grip. Optional `finger_map` for unusual finger names. Test checks palms.
+
 ## 0.2.0
 
 - Godot 4 scripts: `godot/kimodo_clip.gd` reads Kimodo `.npz` (native or AssetFurnace-packed), `godot/kimodo_retarget.gd` retargets onto any `Skeleton3D` with loop / action / death / climb / turn cuts. Test on an A-pose rig.

@@ -24,14 +24,21 @@ T-pose, but frame 0 gives it back:
 ## Your rest pose is not a T-pose
 
 Most rigs rest in an A-pose, or at least not in SOMA's T-pose. Copying *G* onto your bones straight would bend the
-arms by the difference between the two poses. So every limb bone first gets an **alignment rotation** *A*: the
-shortest arc that turns the bone's own rest direction (bone → its child) into SOMA's T-pose direction for the same
-bone:
+arms by the difference between the two poses. So every limb bone first gets an **alignment rotation** *A*, which
+turns the bone's rest **frame** into SOMA's T-pose frame for the same bone. A frame is two axes:
 
-> *A_b = arc(rest_dir_b, N_next − N_b)*
+- the bone's direction (bone → its child; for the hand, hand → middle finger base);
+- a second reference axis: the **palm normal** for arm bones, `(middle1 − hand) × (pinky1 − index1)` from the finger
+  base joints; the **foot direction** (foot → toe) for the thigh and shin; and **up** for the foot itself.
 
-The limbs are shoulder → upper arm → forearm → hand, and thigh → shin → foot → toe. Hands and toes have no child to
-aim at, so they take their parent's *A*. The spine, neck and head get no alignment. They take SOMA's bend as it is.
+> *A_b = frame_soma(b) · frame_rest(b)⁻¹*
+
+Aligning only the direction (the shortest arc) is not enough. It leaves the roll around the bone free, so hands and
+forearms come out twisted. In the author's game palms were off by up to 28°: swords turned in the grip, and shields on the
+forearm swung into the face. With the full frame, palms and forearms match Kimodo to within half a degree.
+
+If your rig has no finger bones, the arm falls back to the shortest arc. Unusual finger names can be given in
+`finger_map`. Toes take the foot's *A*.
 
 ## The world target of each bone
 
@@ -47,7 +54,8 @@ model's own clip, so the grip is the one the artist made.
 
 Why the limb directions come out exact: a bone's child sits at *rest_world_b · offset*. After the formula, its
 direction is *face · G · A · rest_dir = face · G · (N_next − N_b)* — exactly SOMA's direction. The Godot test
-checks this on an A-pose skeleton with odd rest rotations, and the error is below 0.001°.
+checks this on an A-pose skeleton with odd rest rotations: the limb directions and the palm normals are both
+within 0.001°.
 
 ## The hips path
 
